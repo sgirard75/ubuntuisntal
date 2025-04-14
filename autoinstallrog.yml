@@ -1,0 +1,115 @@
+version: 1
+identity:
+  hostname: rog
+  username: stacy
+  password: "$6$FvIAt/VtTUcopcOr$ozo8fYNr3PsCZCcrtqTFNQNZRm4S4spqAwfW2mwBUlsEYg8TuLDidk39asoWedYBF2iu5f48lPqKFbuuRu0sW1"
+locale: fr_CA.UTF-8
+keyboard:
+  layout: ca
+  variant: multi
+timezone: America/Toronto
+
+wifis:
+  wlo1:
+    optional: true
+    dhcp4: true
+    access-points:
+      "bell022":
+        password: "ACF36417"
+
+storage:
+  layout:
+    name: lvm
+  swap:
+    size: 4096
+  config:
+    - id: disk0
+      type: disk
+      match:
+        size: 476.9GiB
+      preserve: false
+      wipe: superblock
+      name: nvme0n1
+      ptable: gpt
+      path: /dev/nvme0n1
+      grub_device: true
+      partitions:
+        - id: root
+          size: 100%
+          mount: /
+          format: ext4
+        - id: shared
+          size: 238.5GiB
+          mount: /mnt/shared
+          format: exfat
+
+packages:
+  - ubuntu-server
+  - zfsutils-linux
+  - xubuntu-desktop  # On installe Xfce pour MSI
+  - flatpak
+  - gnome-software-plugin-flatpak
+  - docker.io
+  - docker-compose
+  - cockpit
+  - openssh-server
+  - neofetch
+  - htop
+  - git
+  - curl
+  - wget
+  - net-tools
+  - libreoffice
+  - vlc
+  - gimp
+  - lightdm
+  - lightdm-gtk-greeter
+  - xrdp
+  - udisks2
+
+late-commands:
+  # Enable services after installation
+  - curtin in-target -- systemctl enable lightdm
+  - curtin in-target -- systemctl enable xrdp
+  - curtin in-target -- systemctl enable ssh
+  - curtin in-target -- usermod -aG docker stacy
+  - curtin in-target -- flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+  - curtin in-target -- bash -c "cat <<'EOF' > /etc/samba/smb.conf
+[global]
+   workgroup = WORKGROUP
+   server string = %h server (Samba, Ubuntu)
+   log file = /var/log/samba/log.%m
+   max log size = 50
+   dns proxy = no
+   map to guest = Never
+
+[nas]
+   comment = Partage NAS
+   path = /home/stacy/nas
+   browsable = yes
+   writable = yes
+   guest ok = no
+   valid users = stacy
+   create mask = 0775
+   directory mask = 0775
+
+[ssd]
+   comment = Partage SSD
+   path = /home/stacy/ssd
+   browsable = yes
+   writable = yes
+   guest ok = no
+   valid users = stacy
+   create mask = 0775
+   directory mask = 0775
+   
+EOF"
+  - curtin in-target -- systemctl restart smbd
+  
+  # Add USB mount and permissions handling
+  - curtin in-target -- bash -c "echo 'ACTION==\"add\", KERNEL==\"sd[a-z][0-9]\", SUBSYSTEM==\"block\", RUN+=\"/bin/chmod 777 /dev/%k\"' > /etc/udev/rules.d/99-usb.rules"
+  - curtin in-target -- systemctl restart systemd-udevd
+  - curtin in-target -- bash -c "USB_DEVICE=\$(lsblk -o NAME,TYPE | grep -E 'sd[a-z][0-9]' | head -n 1 | awk '{print \$1}')"
+  - curtin in-target -- bash -c "if [ ! -z \"\$USB_DEVICE\" ]; then mkdir -p /mnt/usb; mount /dev/\$USB_DEVICE /mnt/usb; chown -R stacy:stacy /mnt/usb; fi"
+
+
